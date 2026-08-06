@@ -253,7 +253,6 @@ This is closer to a production environment than testing the happy path, and it i
 ```
 vision-detect/
 ├── model-service/      Python FastAPI inference service
-├── ml/                 Phase 3 — dataset, training, evaluation reports
 ├── backend/
 │   └── src/
 │       ├── VisionApi/                Controllers · Hubs · BackgroundServices
@@ -263,7 +262,6 @@ vision-detect/
 ├── frontend/           Vue 3 dashboard
 ├── mobile/             .NET MAUI client
 ├── docs/               diagrams and screenshots
-├── .github/workflows/  CI pipelines
 └── docker-compose.yml
 ```
 
