@@ -4,7 +4,11 @@
 
 > A distributed object detection system — capture on mobile, infer in Python, orchestrate in C#, review live on desktop.
 
-**Status: Phase 1 in development.
+![Real-time push](docs/demo-realtime.gif)
+
+Once an image is uploaded, the desktop dashboard gains a row in real time — no polling, no refresh.
+
+**Status: Phase 1 in development.**
 
 ---
 
@@ -264,6 +268,23 @@ vision-detect/
 ├── docs/               diagrams and screenshots
 └── docker-compose.yml
 ```
+---
+
+## Development
+
+For local setup and verification steps, see [DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+---
+### Phase 1 Progress
+
+- [x] Python FastAPI inference service
+- [x] ASP.NET Core API + EF Core + PostgreSQL
+- [x] Asynchronous queue and state machine
+- [x] Idempotency (requestId deduplication)
+- [x] SignalR real-time push + Vue dashboard
+- [ ] Polly resilience policies
+- [ ] .NET MAUI Android client
+- [ ] Docker Compose four-container deployment
 
 ---
 
