@@ -65,3 +65,12 @@ verified.png
 __pycache__/
 .venv/
 .pytest_cache/
+
+# ====== .NET ======
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.dll
+*.pdb
