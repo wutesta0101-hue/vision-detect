@@ -1,0 +1,52 @@
+# ====== 環境變數 ======
+.env
+.env.local
+*.env.local
+
+# ====== 模型權重（體積大，由腳本下載）======
+model-service/weights/*
+!model-service/weights/.gitkeep
+
+# ====== .NET ======
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.dll
+*.pdb
+
+# ====== Node ======
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ====== Python ======
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# ====== MAUI / Android ======
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# ====== 上傳的影像（執行期產生）======
+uploads/
+images/
+
+# ====== 編輯器 ======
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# ====== Logs ======
+*.log
+logs/
