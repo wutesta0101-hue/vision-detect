@@ -253,7 +253,6 @@ Pending ──→ Processing ──→ Done
 ```
 vision-detect/
 ├── model-service/      Python FastAPI 推論服務
-├── ml/                 第三階段 —— 資料集、訓練、評估報告
 ├── backend/
 │   └── src/
 │       ├── VisionApi/                Controllers · Hubs · BackgroundServices
@@ -263,7 +262,6 @@ vision-detect/
 ├── frontend/           Vue 3 儀表板
 ├── mobile/             .NET MAUI 行動端
 ├── docs/               架構圖與截圖
-├── .github/workflows/  CI 流程
 └── docker-compose.yml
 ```
 
