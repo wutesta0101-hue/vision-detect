@@ -32,8 +32,13 @@ public class DetectionRepositoryTests : IDisposable
     public void Dispose() => _db.Dispose();
 
     // 產生一筆測試資料。時間一律用 UTC，與實體的約定一致。
-    private static DetectionRecord MakeRecord(string device = "phone-1", int objectCount = 2) => new()
+    private static DetectionRecord MakeRecord(
+        string device = "phone-1",
+        int objectCount = 2,
+        Guid? requestId = null,
+        JobStatus status = JobStatus.Done) => new()
     {
+        RequestId = requestId ?? Guid.NewGuid(),
         CapturedAt = DateTime.UtcNow.AddMinutes(-5),
         ReceivedAt = DateTime.UtcNow,
         DeviceId = device,
@@ -42,7 +47,7 @@ public class DetectionRepositoryTests : IDisposable
         InferenceMs = 120,
         ImageWidth = 1920,
         ImageHeight = 1080,
-        Status = JobStatus.Done,
+        Status = status,
         Objects = Enumerable.Range(0, objectCount).Select(i => new DetectedObject
         {
             Label = "person",
@@ -119,6 +124,68 @@ public class DetectionRepositoryTests : IDisposable
         Assert.Equal(expected.Y, actual.Y);
         Assert.Equal(expected.Width, actual.Width);
         Assert.Equal(expected.Height, actual.Height);
+    }
+
+    // ---------- 冪等性（第三刀新增）----------
+
+    [Fact]
+    public async Task 依RequestId應查得到紀錄()
+    {
+        var key = Guid.NewGuid();
+        await _repo.AddAsync(MakeRecord(requestId: key));
+
+        var fetched = await _repo.GetByRequestIdAsync(key);
+
+        Assert.NotNull(fetched);
+        Assert.Equal(key, fetched!.RequestId);
+    }
+
+    [Fact]
+    public async Task 查詢不存在的RequestId應回傳null()
+    {
+        Assert.Null(await _repo.GetByRequestIdAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public async Task 相同RequestId不可存入兩次()
+    {
+        // 唯一索引是冪等性的最後一道防線。
+        // 程式碼層的檢查在併發時可能同時通過，但資料庫不會讓兩筆都進去。
+        var key = Guid.NewGuid();
+        await _repo.AddAsync(MakeRecord(requestId: key));
+
+        await Assert.ThrowsAsync<DbUpdateException>(
+            () => _repo.AddAsync(MakeRecord(requestId: key)));
+    }
+
+    // ---------- 狀態更新（第三刀新增）----------
+
+    [Fact]
+    public async Task 狀態更新應被儲存()
+    {
+        var record = await _repo.AddAsync(MakeRecord(status: JobStatus.Pending));
+
+        record.Status = JobStatus.Processing;
+        await _repo.UpdateAsync(record);
+
+        var fetched = await _repo.GetByIdAsync(record.Id);
+        Assert.Equal(JobStatus.Processing, fetched!.Status);
+    }
+
+    [Fact]
+    public async Task 失敗原因應被儲存()
+    {
+        var record = await _repo.AddAsync(MakeRecord(status: JobStatus.Pending));
+
+        record.Status = JobStatus.Failed;
+        record.FailureReason = "模型服務逾時";
+        record.CompletedAt = DateTime.UtcNow;
+        await _repo.UpdateAsync(record);
+
+        var fetched = await _repo.GetByIdAsync(record.Id);
+        Assert.Equal(JobStatus.Failed, fetched!.Status);
+        Assert.Equal("模型服務逾時", fetched.FailureReason);
+        Assert.NotNull(fetched.CompletedAt);
     }
 
     // ---------- 查詢 ----------

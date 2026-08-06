@@ -1,13 +1,15 @@
 using Microsoft.EntityFrameworkCore;
+using VisionApi.BackgroundServices;
 using VisionApi.Core.Abstractions;
 using VisionApi.Data;
 using VisionApi.Infrastructure.ModelService;
+using VisionApi.Infrastructure.Queue;
 using VisionApi.Infrastructure.Storage;
 
 // 應用進入點。
 //
-// 第二刀新增：PostgreSQL 資料庫、影像儲存。
-// 佇列與 SignalR 會在後續的切片加進來。
+// 第三刀新增：作業佇列、背景工作者。
+// SignalR 會在第四刀加進來。
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +36,14 @@ builder.Services.AddScoped<IDetectionRepository, DetectionRepository>();
 // 影像儲存。Singleton 即可 —— 它沒有請求層級的狀態。
 builder.Services.AddSingleton<IImageStorage>(_ =>
     new LocalFileImageStorage(builder.Configuration["Storage:ImagePath"] ?? "images"));
+
+// 作業佇列必須是 Singleton：所有請求與工作者共用同一個佇列實例。
+// 註冊成 Scoped 的話，每個請求會拿到自己的空佇列，工作者永遠收不到東西。
+builder.Services.AddSingleton<IJobQueue>(_ =>
+    new ChannelJobQueue(builder.Configuration.GetValue("Queue:Capacity", 100)));
+
+// 背景工作者。AddHostedService 會在應用啟動時自動執行它。
+builder.Services.AddHostedService<InferenceWorker>();
 
 var app = builder.Build();
 

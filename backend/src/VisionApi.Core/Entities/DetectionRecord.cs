@@ -17,21 +17,34 @@ public class DetectionRecord
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
+    // 由客戶端在拍照當下產生的去重鍵。
+    //
+    // 手機離線佇列重送、或部分失敗後的重複提交，都會帶同一個 RequestId，
+    // 靠資料庫的唯一索引保證只會有一筆紀錄。
+    public Guid RequestId { get; set; }
+
     public DateTime CapturedAt { get; set; }            // 拍攝時間（UTC）
     public DateTime ReceivedAt { get; set; }            // 伺服器接收時間（UTC）
+    public DateTime? CompletedAt { get; set; }          // 進入終態的時間（UTC）
 
     public string DeviceId { get; set; } = "unknown";   // 哪台裝置送來的
     public string ImagePath { get; set; } = "";         // 影像檔路徑，不存二進位進 DB
 
     // 換模型後，舊紀錄是舊模型算的。
     // 沒有這個欄位，之後分不清準確度變化是模型改進還是資料不同。
+    // 推論完成前為空字串。
     public string ModelVersion { get; set; } = "";
 
     public int InferenceMs { get; set; }
     public int ImageWidth { get; set; }                 // 座標的參考基準
     public int ImageHeight { get; set; }
 
-    public JobStatus Status { get; set; } = JobStatus.Done;
+    // 作業狀態。合法的轉移規則定義在 JobStateMachine。
+    public JobStatus Status { get; set; } = JobStatus.Pending;
+
+    // 失敗時的原因，成功時為 null。
+    // 儀表板要呈現失敗而非隱藏，所以這個欄位會回傳給客戶端。
+    public string? FailureReason { get; set; }
 
     public List<DetectedObject> Objects { get; set; } = new();
 }

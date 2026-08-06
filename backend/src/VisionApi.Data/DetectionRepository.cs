@@ -26,6 +26,16 @@ public class DetectionRepository : IDetectionRepository
             .Include(r => r.Objects)
             .FirstOrDefaultAsync(r => r.Id == id, ct);
 
+    // 依去重鍵查詢。冪等性檢查用。
+    public Task<DetectionRecord?> GetByRequestIdAsync(Guid requestId, CancellationToken ct = default) =>
+        _db.Records
+            .Include(r => r.Objects)
+            .FirstOrDefaultAsync(r => r.RequestId == requestId, ct);
+
+    // 儲存修改。EF 的變更追蹤會自動判斷哪些欄位變了。
+    public Task UpdateAsync(DetectionRecord record, CancellationToken ct = default) =>
+        _db.SaveChangesAsync(ct);
+
     // 歷史列表。
     // AsNoTracking：純讀取不需要變更追蹤，省記憶體也快一些。
     public async Task<IReadOnlyList<DetectionRecord>> ListAsync(

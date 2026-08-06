@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using VisionApi.Core.Abstractions;
 using VisionApi.Core.Entities;
 using VisionApi.Core.Enums;
@@ -7,9 +8,11 @@ namespace VisionApi.Controllers;
 
 // 辨識端點。
 //
-// ⚠️ 目前仍是同步版本：收到上傳後直接呼叫模型服務並等待結果。
-//    第二刀新增的是「存檔 + 寫入資料庫 + 可查詢歷史」。
-//    第三刀會改成非同步（回 202 + jobId），屆時 Detect 方法會大改。
+// 第三刀起改為非同步：POST 不等待推論，只把作業排進佇列就返回 202。
+// 實際推論由 InferenceWorker 在背景進行，客戶端用 jobId 查詢結果。
+//
+// 為什麼要這樣：推論要一到兩秒，同步等待會佔住 HTTP 連線，
+// 併發一高就會耗盡連線數而崩潰。
 [ApiController]
 [Route("api/v1/[controller]")]
 public class DetectionsController : ControllerBase
@@ -17,77 +20,81 @@ public class DetectionsController : ControllerBase
     private readonly IModelServiceClient _modelService;
     private readonly IDetectionRepository _repository;
     private readonly IImageStorage _storage;
+    private readonly IJobQueue _queue;
 
     public DetectionsController(
         IModelServiceClient modelService,
         IDetectionRepository repository,
-        IImageStorage storage)
+        IImageStorage storage,
+        IJobQueue queue)
     {
         _modelService = modelService;
         _repository = repository;
         _storage = storage;
+        _queue = queue;
     }
 
-    // POST /api/v1/detections —— 上傳影像、辨識、存檔、寫入資料庫
+    // POST /api/v1/detections —— 接收上傳，建立作業，立即返回
     //
-    // capturedAt 接受帶時區的 ISO 8601 字串（客戶端慣例），
-    // 存進資料庫前一律轉成 UTC。
+    // 回應：
+    //   202 Accepted → 新作業已建立
+    //   200 OK       → 這個 requestId 先前送過，回傳原本的作業
+    //
+    // capturedAt 接受帶時區的 ISO 8601 字串，存進資料庫前轉成 UTC。
     [HttpPost]
-    public async Task<IActionResult> Detect(
+    public async Task<IActionResult> Submit(
         IFormFile image,
+        [FromForm] Guid? requestId,
         [FromForm] string? deviceId,
         [FromForm] DateTimeOffset? capturedAt,
-        [FromForm] double? confThreshold,
         CancellationToken ct)
     {
         if (image is null || image.Length == 0)
             return BadRequest(new { error = "missing_image", detail = "請提供影像檔案" });
 
-        // 先存檔再推論：即使推論失敗，原始影像也不會遺失，事後可重跑
+        // requestId 由客戶端產生。沒帶的話伺服器補一個，
+        // 但那樣就失去去重能力 —— 行動端一定要帶。
+        var key = requestId ?? Guid.NewGuid();
+
+        // 冪等性檢查（第一道）：先查有沒有處理過
+        var existing = await _repository.GetByRequestIdAsync(key, ct);
+        if (existing is not null) return Ok(ToDto(existing));
+
+        // 先存檔再建立作業：影像必須在工作者取用前就已落地
         string imagePath;
         await using (var stream = image.OpenReadStream())
             imagePath = await _storage.SaveAsync(stream, image.FileName, ct);
 
+        var record = new DetectionRecord
+        {
+            RequestId = key,
+            CapturedAt = capturedAt?.UtcDateTime ?? DateTime.UtcNow,
+            ReceivedAt = DateTime.UtcNow,
+            DeviceId = deviceId ?? "unknown",
+            ImagePath = imagePath,
+            Status = JobStatus.Pending
+        };
+
         try
         {
-            await using var inferStream = image.OpenReadStream();
-            var result = await _modelService.InferAsync(inferStream, image.FileName, confThreshold, ct);
-
-            var record = new DetectionRecord
-            {
-                CapturedAt = capturedAt?.UtcDateTime ?? DateTime.UtcNow,
-                ReceivedAt = DateTime.UtcNow,
-                DeviceId = deviceId ?? "unknown",
-                ImagePath = imagePath,
-                ModelVersion = result.ModelVersion,
-                InferenceMs = result.InferenceMs,
-                ImageWidth = result.ImageWidth,
-                ImageHeight = result.ImageHeight,
-                Status = JobStatus.Done,
-                Objects = result.Detections.Select(d => new DetectedObject
-                {
-                    Label = d.Label,
-                    ClassId = d.ClassId,
-                    Confidence = d.Confidence,
-                    X = d.X,
-                    Y = d.Y,
-                    Width = d.Width,
-                    Height = d.Height
-                }).ToList()
-            };
-
             await _repository.AddAsync(record, ct);
-            return Ok(ToDto(record));
         }
-        catch (ModelServiceException ex)
+        catch (DbUpdateException)
         {
-            // 不可重試的錯誤代表輸入有問題 → 400；可重試代表服務暫時不可用 → 503
-            var status = ex.Retryable ? 503 : 400;
-            return StatusCode(status, new { error = ex.ErrorCode, detail = ex.Message });
+            // 冪等性檢查（第二道）：併發時兩個請求可能都通過上面的查詢，
+            // 由資料庫的唯一索引擋下其中一個。這裡把既有的那筆回傳。
+            var concurrent = await _repository.GetByRequestIdAsync(key, ct);
+            if (concurrent is not null) return Ok(ToDto(concurrent));
+            throw;
         }
+
+        await _queue.EnqueueAsync(record.Id, ct);
+
+        return Accepted(new { jobId = record.Id, status = record.Status.ToString() });
     }
 
-    // GET /api/v1/detections/{id} —— 查詢單筆
+    // GET /api/v1/detections/{id} —— 查詢作業狀態與結果
+    // 作為 SignalR 推播不可用時的備援
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
@@ -116,21 +123,26 @@ public class DetectionsController : ControllerBase
     }
 
     // 實體轉成 API 回應。
-    // 不直接回傳 Entity：避免把資料庫結構（例如內部欄位）洩漏給客戶端，
+    // 不直接回傳 Entity：避免把資料庫結構洩漏給客戶端，
     // 也避免 EF 的導覽屬性造成循環參照。
     //
     // 時間欄位標記為 UTC 後輸出，客戶端會收到帶 Z 的 ISO 8601 字串。
     private static object ToDto(DetectionRecord r) => new
     {
         id = r.Id,
+        requestId = r.RequestId,
+        status = r.Status.ToString(),
         capturedAt = DateTime.SpecifyKind(r.CapturedAt, DateTimeKind.Utc),
         receivedAt = DateTime.SpecifyKind(r.ReceivedAt, DateTimeKind.Utc),
+        completedAt = r.CompletedAt.HasValue
+            ? DateTime.SpecifyKind(r.CompletedAt.Value, DateTimeKind.Utc)
+            : (DateTime?)null,
         deviceId = r.DeviceId,
-        status = r.Status.ToString(),
         modelVersion = r.ModelVersion,
         inferenceMs = r.InferenceMs,
         imageWidth = r.ImageWidth,
         imageHeight = r.ImageHeight,
+        failureReason = r.FailureReason,
         detections = r.Objects.Select(o => new
         {
             label = o.Label,

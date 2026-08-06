@@ -10,6 +10,12 @@ public interface IDetectionRepository
 
     Task<DetectionRecord?> GetByIdAsync(Guid id, CancellationToken ct = default);
 
+    // 依去重鍵查詢。冪等性的基礎：同一個 RequestId 只會對應一筆紀錄。
+    Task<DetectionRecord?> GetByRequestIdAsync(Guid requestId, CancellationToken ct = default);
+
+    // 儲存對既有紀錄的修改（狀態轉移、寫入推論結果）
+    Task UpdateAsync(DetectionRecord record, CancellationToken ct = default);
+
     // 依接收時間新到舊排序，供儀表板的歷史列表使用
     Task<IReadOnlyList<DetectionRecord>> ListAsync(
         int skip = 0, int take = 50, CancellationToken ct = default);

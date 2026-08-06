@@ -25,9 +25,20 @@ public class VisionDbContext : DbContext
             e.Property(x => x.ImagePath).HasMaxLength(500).IsRequired();
             e.Property(x => x.ModelVersion).HasMaxLength(100).IsRequired();
             e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.FailureReason).HasMaxLength(500);
+
+            // 去重鍵的唯一索引。
+            //
+            // 這是冪等性的最後一道防線：兩個執行緒同時檢查「這個 RequestId
+            // 存在嗎」都得到「不存在」時，程式碼層的檢查會失效，
+            // 但資料庫的唯一約束會讓其中一個插入失敗。
+            e.HasIndex(x => x.RequestId).IsUnique();
 
             // 歷史列表依接收時間排序，加索引避免資料量大時全表掃描
             e.HasIndex(x => x.ReceivedAt);
+
+            // 依狀態篩選（例如只看失敗的）是儀表板的常用查詢
+            e.HasIndex(x => x.Status);
 
             // 刪除紀錄時連同偵測框一起刪，不留孤兒資料
             e.HasMany(x => x.Objects)
