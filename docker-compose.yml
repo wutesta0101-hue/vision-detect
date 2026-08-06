@@ -1,0 +1,62 @@
+# 開發環境的資料庫服務。
+#
+# 第二步只需要 PostgreSQL —— API 與模型服務仍在本機直接跑（有 hot reload）。
+# 完整的四容器部署在最後一刀建立。
+#
+# 常用指令：
+#   docker compose up -d      啟動
+#   docker compose ps         查看狀態
+#   docker compose down       停止（保留資料）
+#   docker compose down -v    停止並清除資料（⚠️ 資料會消失）
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vd_postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vduser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vdpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-vision_detect}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+    # 讓 Docker 知道服務「真的能用了」，不只是「程序啟動了」
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vduser} -d ${POSTGRES_DB:-vision_detect}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # 資料庫圖形化管理介面
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: vd_pgadmin
+    restart: unless-stopped
+
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+
+    ports:
+      - "8080:80"
+
+    # 保留伺服器連線設定，容器重建後不用重新登記
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# 具名 volume 宣告區。這裡只是「宣告有這些 volume」，
+# 實際掛到哪個路徑寫在各服務的 volumes 底下。
+volumes:
+  pg_data:
+  pgadmin_data:

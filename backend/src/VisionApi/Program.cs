@@ -1,10 +1,13 @@
+using Microsoft.EntityFrameworkCore;
 using VisionApi.Core.Abstractions;
+using VisionApi.Data;
 using VisionApi.Infrastructure.ModelService;
+using VisionApi.Infrastructure.Storage;
 
 // 應用進入點。
 //
-// 目前只註冊三樣東西：控制器、Swagger、模型服務客戶端。
-// 資料庫、佇列、SignalR 會在後續的切片加進來。
+// 第二刀新增：PostgreSQL 資料庫、影像儲存。
+// 佇列與 SignalR 會在後續的切片加進來。
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,7 +25,26 @@ builder.Services.AddHttpClient<IModelServiceClient, ModelServiceClient>(client =
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+// 資料庫。連線字串來自 appsettings 或環境變數 ConnectionStrings__Default。
+builder.Services.AddDbContext<VisionDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+
+builder.Services.AddScoped<IDetectionRepository, DetectionRepository>();
+
+// 影像儲存。Singleton 即可 —— 它沒有請求層級的狀態。
+builder.Services.AddSingleton<IImageStorage>(_ =>
+    new LocalFileImageStorage(builder.Configuration["Storage:ImagePath"] ?? "images"));
+
 var app = builder.Build();
+
+// 開發階段自動建表。
+// 正式環境應改用 migration（dotnet ef database update），
+// 因為 EnsureCreated 不會處理既有資料表的結構變更。
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    scope.ServiceProvider.GetRequiredService<VisionDbContext>().Database.EnsureCreated();
+}
 
 app.UseSwagger();
 app.UseSwaggerUI();

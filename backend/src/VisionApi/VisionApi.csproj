@@ -7,12 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\VisionApi.Core\VisionApi.Core.csproj" />
     <ProjectReference Include="..\VisionApi.Infrastructure\VisionApi.Infrastructure.csproj" />
+    <ProjectReference Include="..\VisionApi.Data\VisionApi.Data.csproj" />
   </ItemGroup>
 
 </Project>

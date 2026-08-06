@@ -74,3 +74,8 @@ obj/
 .vs/
 *.dll
 *.pdb
+
+images/
+backend/src/VisionApi/images/
+bin/
+obj/
