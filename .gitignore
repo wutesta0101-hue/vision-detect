@@ -52,3 +52,16 @@ Thumbs.db
 logs/
 
 *需求*.md
+
+# 驗證工具與測試素材，不進版控
+verify_boxes.py
+test.jpg
+verified.png
+
+# 模型權重
+*.pt
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/

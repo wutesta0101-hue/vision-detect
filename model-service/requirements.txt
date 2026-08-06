@@ -1,0 +1,12 @@
+# Web 框架
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+
+# 推論
+ultralytics==8.3.0
+pillow==10.4.0
+
+# 測試
+pytest==8.3.3
+httpx==0.27.2
