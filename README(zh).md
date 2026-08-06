@@ -4,7 +4,11 @@
 
 > 分散式物件辨識系統 —— 手機拍攝、Python 推論、C# 編排、桌機即時檢視。
 
-**狀態：第一階段開發中。
+![即時推播](docs/demo-realtime.gif)
+
+上傳影像後，桌機儀表板即時新增一列 —— 不輪詢、不重新整理。
+
+**狀態：第一階段開發中。**
 
 ---
 
@@ -264,6 +268,23 @@ vision-detect/
 ├── docs/               架構圖與截圖
 └── docker-compose.yml
 ```
+---
+
+## 開發
+
+本機啟動與驗證流程見 [DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+
+---
+### 第一階段進度
+
+- [x] Python FastAPI 推論服務
+- [x] ASP.NET Core API + EF Core + PostgreSQL
+- [x] 非同步佇列與狀態機
+- [x] 冪等性（requestId 去重）
+- [x] SignalR 即時推播 + Vue 儀表板
+- [ ] Polly 韌性策略
+- [ ] .NET MAUI Android 端
+- [ ] Docker Compose 四容器部署
 
 ---
 
