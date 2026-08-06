@@ -1,30 +1,38 @@
+using Microsoft.AspNetCore.SignalR;
 using VisionApi.Core.Abstractions;
+using VisionApi.Core.Dtos;
 using VisionApi.Core.Entities;
 using VisionApi.Core.Enums;
 using VisionApi.Core.Jobs;
+using VisionApi.Hubs;
 
 namespace VisionApi.BackgroundServices;
 
-// 背景工作者：從佇列取出作業，呼叫模型服務，更新紀錄狀態。
+// 背景工作者：從佇列取出作業，呼叫模型服務，更新紀錄狀態，推播結果。
 //
 // 這是非同步設計的核心。POST 只負責把作業排進佇列就返回，
 // 實際的推論在這裡發生 —— HTTP 連線不會被佔住一兩秒。
 //
 // 狀態流轉：Pending → Processing → Done | Failed
 // 每次轉移都經過 JobStateMachine 檢查，非法轉移會被擋下並記錄。
+//
+// 進入終態時透過 SignalR 推播給所有連線的客戶端，讓儀表板即時更新。
 public class InferenceWorker : BackgroundService
 {
     private readonly IJobQueue _queue;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IHubContext<DetectionHub> _hub;
     private readonly ILogger<InferenceWorker> _logger;
 
     public InferenceWorker(
         IJobQueue queue,
         IServiceScopeFactory scopeFactory,
+        IHubContext<DetectionHub> hub,
         ILogger<InferenceWorker> logger)
     {
         _queue = queue;
         _scopeFactory = scopeFactory;
+        _hub = hub;
         _logger = logger;
     }
 
@@ -127,6 +135,8 @@ public class InferenceWorker : BackgroundService
             _logger.LogInformation(
                 "作業 {JobId} 完成，{Count} 個偵測框，耗時 {Ms}ms",
                 jobId, record.Objects.Count, record.InferenceMs);
+
+            await Push("DetectionCompleted", record);
         }
         catch (ModelServiceException ex)
         {
@@ -150,6 +160,22 @@ public class InferenceWorker : BackgroundService
             //    作業就永遠卡在 Processing —— 那比明確失敗更糟，
             //    因為客戶端會一直等一個不會到來的結果。
             await Fail(repository, record, $"{ex.GetType().Name}: {ex.Message}", ct);
+        }
+    }
+
+    // 推播給所有連線的客戶端。
+    //
+    // 推播失敗不能影響作業本身 —— 結果已經寫進資料庫了，
+    // 客戶端仍可用 GET /{jobId} 取得。所以這裡吞掉例外只記 log。
+    private async Task Push(string eventName, DetectionRecord record)
+    {
+        try
+        {
+            await _hub.Clients.All.SendAsync(eventName, DetectionDto.FromEntity(record));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "推播 {Event} 失敗，作業 {JobId}", eventName, record.Id);
         }
     }
 
@@ -183,5 +209,7 @@ public class InferenceWorker : BackgroundService
         await repository.UpdateAsync(record, CancellationToken.None);
 
         _logger.LogWarning("作業 {JobId} 失敗：{Reason}", record.Id, reason);
+
+        await Push("DetectionFailed", record);
     }
 }

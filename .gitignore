@@ -79,3 +79,12 @@ images/
 backend/src/VisionApi/images/
 bin/
 obj/
+
+# ====== Node ======
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ====== 前端本機設定（每個人的 port 不同）======
+.env.development

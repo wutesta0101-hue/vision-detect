@@ -1,0 +1,122 @@
+/* 全域樣式
+ *
+ * 設計方向：淺灰背景 + 融入背景的陰影卡片。
+ * 不用外框線，靠陰影製造層次，視覺比較安靜。
+ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f2f3f5;
+  --surface: #ffffff;
+  --text: #1d1d1f;
+  --text-dim: #6e6e73;
+  --border: #e5e6e8;
+
+  /* 狀態色 */
+  --pending: #8e8e93;
+  --processing: #0071e3;
+  --done: #34c759;
+  --failed: #ff3b30;
+
+  /* 融入背景的陰影，不用邊框 */
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.title { font-size: 22px; font-weight: 600; }
+.subtitle { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+
+/* 陰影卡片 —— 全站的基本容器 */
+.card {
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 14px;
+}
+
+/* 表格 */
+table { width: 100%; border-collapse: collapse; }
+
+th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+tr:last-child td { border-bottom: none; }
+
+/* 新增列的高亮動畫 —— 讓即時推播的效果看得見 */
+@keyframes flash {
+  from { background: #e8f2ff; }
+  to   { background: transparent; }
+}
+.row-new { animation: flash 1.6s ease-out; }
+
+/* 按鈕與輸入 */
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #0071e3;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn:hover { opacity: 0.88; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.mono { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 12px; }
+.dim { color: var(--text-dim); }
+.empty { text-align: center; color: var(--text-dim); padding: 40px 0; }
+
+/* 類別標籤 */
+.chip {
+  display: inline-block;
+  background: var(--bg);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 12px;
+  margin: 0 4px 4px 0;
+}

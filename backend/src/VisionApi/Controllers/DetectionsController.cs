@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using VisionApi.Core.Abstractions;
+using VisionApi.Core.Dtos;
 using VisionApi.Core.Entities;
 using VisionApi.Core.Enums;
 
@@ -9,7 +10,8 @@ namespace VisionApi.Controllers;
 // 辨識端點。
 //
 // 第三刀起改為非同步：POST 不等待推論，只把作業排進佇列就返回 202。
-// 實際推論由 InferenceWorker 在背景進行，客戶端用 jobId 查詢結果。
+// 實際推論由 InferenceWorker 在背景進行，結果透過 SignalR 推播，
+// 客戶端也可用 jobId 主動查詢（作為推播不可用時的備援）。
 //
 // 為什麼要這樣：推論要一到兩秒，同步等待會佔住 HTTP 連線，
 // 併發一高就會耗盡連線數而崩潰。
@@ -58,7 +60,7 @@ public class DetectionsController : ControllerBase
 
         // 冪等性檢查（第一道）：先查有沒有處理過
         var existing = await _repository.GetByRequestIdAsync(key, ct);
-        if (existing is not null) return Ok(ToDto(existing));
+        if (existing is not null) return Ok(DetectionDto.FromEntity(existing));
 
         // 先存檔再建立作業：影像必須在工作者取用前就已落地
         string imagePath;
@@ -84,7 +86,7 @@ public class DetectionsController : ControllerBase
             // 冪等性檢查（第二道）：併發時兩個請求可能都通過上面的查詢，
             // 由資料庫的唯一索引擋下其中一個。這裡把既有的那筆回傳。
             var concurrent = await _repository.GetByRequestIdAsync(key, ct);
-            if (concurrent is not null) return Ok(ToDto(concurrent));
+            if (concurrent is not null) return Ok(DetectionDto.FromEntity(concurrent));
             throw;
         }
 
@@ -99,7 +101,7 @@ public class DetectionsController : ControllerBase
     public async Task<IActionResult> GetById(Guid id, CancellationToken ct)
     {
         var record = await _repository.GetByIdAsync(id, ct);
-        return record is null ? NotFound() : Ok(ToDto(record));
+        return record is null ? NotFound() : Ok(DetectionDto.FromEntity(record));
     }
 
     // GET /api/v1/detections —— 歷史列表，供儀表板使用
@@ -111,7 +113,7 @@ public class DetectionsController : ControllerBase
     {
         take = Math.Clamp(take, 1, 200);   // 避免一次撈太多把記憶體吃光
         var records = await _repository.ListAsync(skip, take, ct);
-        return Ok(records.Select(ToDto));
+        return Ok(records.Select(DetectionDto.FromEntity));
     }
 
     // GET /api/v1/detections/labels —— 目前模型的類別清單，供前端篩選器使用
@@ -121,37 +123,4 @@ public class DetectionsController : ControllerBase
         var labels = await _modelService.GetLabelsAsync(ct);
         return Ok(labels);
     }
-
-    // 實體轉成 API 回應。
-    // 不直接回傳 Entity：避免把資料庫結構洩漏給客戶端，
-    // 也避免 EF 的導覽屬性造成循環參照。
-    //
-    // 時間欄位標記為 UTC 後輸出，客戶端會收到帶 Z 的 ISO 8601 字串。
-    private static object ToDto(DetectionRecord r) => new
-    {
-        id = r.Id,
-        requestId = r.RequestId,
-        status = r.Status.ToString(),
-        capturedAt = DateTime.SpecifyKind(r.CapturedAt, DateTimeKind.Utc),
-        receivedAt = DateTime.SpecifyKind(r.ReceivedAt, DateTimeKind.Utc),
-        completedAt = r.CompletedAt.HasValue
-            ? DateTime.SpecifyKind(r.CompletedAt.Value, DateTimeKind.Utc)
-            : (DateTime?)null,
-        deviceId = r.DeviceId,
-        modelVersion = r.ModelVersion,
-        inferenceMs = r.InferenceMs,
-        imageWidth = r.ImageWidth,
-        imageHeight = r.ImageHeight,
-        failureReason = r.FailureReason,
-        detections = r.Objects.Select(o => new
-        {
-            label = o.Label,
-            classId = o.ClassId,
-            confidence = o.Confidence,
-            x = o.X,
-            y = o.Y,
-            width = o.Width,
-            height = o.Height
-        })
-    };
 }

@@ -2,20 +2,41 @@ using Microsoft.EntityFrameworkCore;
 using VisionApi.BackgroundServices;
 using VisionApi.Core.Abstractions;
 using VisionApi.Data;
+using VisionApi.Hubs;
 using VisionApi.Infrastructure.ModelService;
 using VisionApi.Infrastructure.Queue;
 using VisionApi.Infrastructure.Storage;
 
 // 應用進入點。
 //
-// 第三刀新增：作業佇列、背景工作者。
-// SignalR 會在第四刀加進來。
+// 第四刀新增：SignalR 即時推播、CORS（開發階段前端在不同 port）。
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// SignalR：辨識完成時主動推播給前端，免輪詢
+builder.Services.AddSignalR();
+
+// CORS —— 只在開發階段需要。
+//
+// 開發時 Vue 跑在 5173、API 跑在別的 port，瀏覽器視為不同來源。
+// 部署後兩者都在 Nginx 後面（同一個 origin），這段就不會生效。
+//
+// 🔴 AllowCredentials 是 SignalR 必要的，而它不能搭配 AllowAnyOrigin，
+//    所以一定要明確列出來源。
+const string DevCors = "DevCors";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(DevCors, policy => policy
+        .WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>()
+                     ?? new[] { "http://localhost:5173" })
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials());
+});
 
 // 模型服務客戶端。
 // 用 AddHttpClient 而不是 new HttpClient()：前者會管理連線池，
@@ -56,9 +77,12 @@ if (app.Environment.IsDevelopment())
     scope.ServiceProvider.GetRequiredService<VisionDbContext>().Database.EnsureCreated();
 }
 
+app.UseCors(DevCors);
+
 app.UseSwagger();
 app.UseSwaggerUI();
 app.MapControllers();
+app.MapHub<DetectionHub>("/hub/detections");
 
 // 健康檢查。部署後 Docker 與監控會打這個端點。
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
