@@ -282,9 +282,9 @@ vision-detect/
 - [x] 非同步佇列與狀態機
 - [x] 冪等性（requestId 去重）
 - [x] SignalR 即時推播 + Vue 儀表板
-- [ ] Polly 韌性策略
+- [x] Polly 韌性策略
 - [ ] .NET MAUI Android 端
-- [ ] Docker Compose 四容器部署
+- [x] Docker Compose 四容器部署
 
 ---
 

@@ -282,9 +282,9 @@ For local setup and verification steps, see [DEVELOPMENT.md](docs/DEVELOPMENT.md
 - [x] Asynchronous queue and state machine
 - [x] Idempotency (requestId deduplication)
 - [x] SignalR real-time push + Vue dashboard
-- [ ] Polly resilience policies
+- [x] Polly resilience policies
 - [ ] .NET MAUI Android client
-- [ ] Docker Compose four-container deployment
+- [x] Docker Compose four-container deployment
 
 ---
 
