@@ -1,0 +1,21 @@
+# 編譯產物 —— 容器內會自己重新編譯
+**/bin/
+**/obj/
+
+# 測試專案不需要進正式映像
+tests/
+
+# 執行期產生的檔案
+**/images/
+
+# 開發工具
+.vs/
+.vscode/
+*.user
+
+# Docker 自己
+Dockerfile
+.dockerignore
+
+# 文件
+*.md

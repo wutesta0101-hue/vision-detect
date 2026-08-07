@@ -1,0 +1,24 @@
+# 開發專用設定
+#
+# docker compose 啟動時會自動合併 docker-compose.yml 與此檔，
+# 不需要任何額外參數。
+#
+# 此檔只做一件事：把內部服務的 port 對外開放，方便直接測試。
+#   9000 → C# API（可打 Swagger）
+#   8000 → Python 模型服務（可打 /docs）
+#   5432 → PostgreSQL（可用 DBeaver 等工具直連）
+#
+# 交付給客戶時不要包含這個檔案 —— 少了它就自動變成「只開 80 與 8080」的安全設定。
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  model:
+    ports:
+      - "8000:8000"
+
+  api:
+    ports:
+      - "9000:8080"

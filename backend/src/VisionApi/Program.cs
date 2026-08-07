@@ -9,7 +9,8 @@ using VisionApi.Infrastructure.Storage;
 
 // 應用進入點。
 //
-// 第五刀新增：Polly 韌性策略（逾時、重試、斷路器）。
+// 第七刀新增：容器化相關調整 —— 自動建表改由設定控制，
+// 因為容器內的環境是 Production，原本的判斷式不會執行。
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -75,10 +76,15 @@ builder.Services.AddHostedService<InferenceWorker>();
 
 var app = builder.Build();
 
-// 開發階段自動建表。
-// 正式環境應改用 migration（dotnet ef database update），
-// 因為 EnsureCreated 不會處理既有資料表的結構變更。
-if (app.Environment.IsDevelopment())
+// 自動建表。
+//
+// 🔴 改為由設定控制，不再依 Environment 判斷。
+//    容器內的環境是 Production，原本的 IsDevelopment() 永遠是 false，
+//    部署後資料表不會建立，API 一啟動就會因為找不到表而失敗。
+//
+// EnsureCreated 只建立不存在的表，不會修改既有的表 —— 
+// 改了實體結構仍需重建資料庫。正式產品應改用 EF Core migration。
+if (builder.Configuration.GetValue("Database:AutoCreate", true))
 {
     using var scope = app.Services.CreateScope();
     scope.ServiceProvider.GetRequiredService<VisionDbContext>().Database.EnsureCreated();
@@ -91,7 +97,7 @@ app.UseSwaggerUI();
 app.MapControllers();
 app.MapHub<DetectionHub>("/hub/detections");
 
-// 健康檢查。部署後 Docker 與監控會打這個端點。
+// 健康檢查。Docker 的 healthcheck 與監控會打這個端點。
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 app.Run();
