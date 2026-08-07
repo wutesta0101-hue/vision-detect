@@ -21,6 +21,7 @@ public record DetectionDto(
     int InferenceMs,
     int ImageWidth,
     int ImageHeight,
+    int AttemptCount,
     string? FailureReason,
     IReadOnlyList<DetectionBoxDto> Detections)
 {
@@ -39,6 +40,7 @@ public record DetectionDto(
         r.InferenceMs,
         r.ImageWidth,
         r.ImageHeight,
+        r.AttemptCount,
         r.FailureReason,
         r.Objects.Select(DetectionBoxDto.FromEntity).ToList());
 }

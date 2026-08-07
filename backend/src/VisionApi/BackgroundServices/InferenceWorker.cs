@@ -14,26 +14,34 @@ namespace VisionApi.BackgroundServices;
 // 實際的推論在這裡發生 —— HTTP 連線不會被佔住一兩秒。
 //
 // 狀態流轉：Pending → Processing → Done | Failed
+//                          └──→ Pending（可重試的失敗，放回佇列）
 // 每次轉移都經過 JobStateMachine 檢查，非法轉移會被擋下並記錄。
 //
-// 進入終態時透過 SignalR 推播給所有連線的客戶端，讓儀表板即時更新。
+// 兩層重試的分工：
+//   HTTP 層（Polly）—— 單次呼叫內的瞬間故障，秒級，作業無感
+//   作業層（本類別）—— 服務較長時間不可用，分鐘級，放回佇列稍後再試
 public class InferenceWorker : BackgroundService
 {
     private readonly IJobQueue _queue;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<DetectionHub> _hub;
     private readonly ILogger<InferenceWorker> _logger;
+    private readonly int _maxAttempts;
+    private readonly int _requeueDelaySeconds;
 
     public InferenceWorker(
         IJobQueue queue,
         IServiceScopeFactory scopeFactory,
         IHubContext<DetectionHub> hub,
+        IConfiguration config,
         ILogger<InferenceWorker> logger)
     {
         _queue = queue;
         _scopeFactory = scopeFactory;
         _hub = hub;
         _logger = logger;
+        _maxAttempts = config.GetValue("Worker:MaxAttempts", 3);
+        _requeueDelaySeconds = config.GetValue("Worker:RequeueDelaySeconds", 20);
     }
 
     // 主迴圈：持續取出作業處理，直到應用關閉。
@@ -88,7 +96,7 @@ public class InferenceWorker : BackgroundService
         }
 
         // 終態的作業不再處理。
-        // 防止重複入列（例如未來加入重試機制時）造成結果被覆寫。
+        // 防止重複入列造成結果被覆寫。
         if (JobStateMachine.IsTerminal(record.Status))
         {
             _logger.LogWarning("作業 {JobId} 已是終態 {Status}，略過", jobId, record.Status);
@@ -96,6 +104,7 @@ public class InferenceWorker : BackgroundService
         }
 
         if (!TryTransition(record, JobStatus.Processing)) return;
+        record.AttemptCount++;
         await repository.UpdateAsync(record, ct);
 
         try
@@ -103,6 +112,7 @@ public class InferenceWorker : BackgroundService
             var stream = await storage.OpenAsync(record.ImagePath, ct);
             if (stream is null)
             {
+                // 檔案不見了 —— 重試也不會回來，直接終結
                 await Fail(repository, record, "找不到影像檔案", ct);
                 return;
             }
@@ -133,34 +143,87 @@ public class InferenceWorker : BackgroundService
             await repository.UpdateAsync(record, ct);
 
             _logger.LogInformation(
-                "作業 {JobId} 完成，{Count} 個偵測框，耗時 {Ms}ms",
-                jobId, record.Objects.Count, record.InferenceMs);
+                "作業 {JobId} 完成（第 {Attempt} 次嘗試），{Count} 個偵測框，耗時 {Ms}ms",
+                jobId, record.AttemptCount, record.Objects.Count, record.InferenceMs);
 
             await Push("DetectionCompleted", record);
         }
         catch (ModelServiceException ex)
         {
-            // 模型服務有回應，但回的是錯誤（400、503、500 等）。
-            // 目前不論可否重試都直接標記失敗。
-            // 重試策略在第五刀用 Polly 加上，屆時 Retryable 才會真正發揮作用。
-            await Fail(repository, record, ex.Message, ct);
+            // 模型服務有回應，但回的是錯誤。
+            // Retryable 旗標決定要放回佇列還是直接終結 —— 
+            // 這個欄位從第一刀就存在，到這一刀才真正發揮作用。
+            await HandleFailure(repository, record, ex.Message, ex.Retryable, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // 應用正在關閉。作業留在 Processing，重啟後可由人工或補償機制處理。
-            // 不標記為 Failed，因為它其實沒有失敗，只是被中斷。
             _logger.LogWarning("作業 {JobId} 因應用關閉而中斷", jobId);
             throw;
         }
         catch (Exception ex)
         {
-            // 服務連不上、呼叫逾時、回應解析失敗等未預期狀況。
-            //
-            // 🔴 這個 catch 不能省：沒有它的話，例外會冒到外層迴圈，
-            //    作業就永遠卡在 Processing —— 那比明確失敗更糟，
-            //    因為客戶端會一直等一個不會到來的結果。
-            await Fail(repository, record, $"{ex.GetType().Name}: {ex.Message}", ct);
+            // 服務連不上、Polly 重試耗盡、斷路器開啟等。
+            // 這類都屬於「服務暫時不可用」，視為可重試。
+            await HandleFailure(repository, record, $"{ex.GetType().Name}: {ex.Message}", true, ct);
         }
+    }
+
+    // 失敗處理。可重試且未達上限就放回佇列，否則終結。
+    private async Task HandleFailure(
+        IDetectionRepository repository,
+        DetectionRecord record,
+        string reason,
+        bool retryable,
+        CancellationToken ct)
+    {
+        if (retryable && record.AttemptCount < _maxAttempts)
+        {
+            await Requeue(repository, record, reason);
+            return;
+        }
+
+        var detail = retryable
+            ? $"重試 {record.AttemptCount} 次後仍失敗：{reason}"
+            : reason;
+
+        await Fail(repository, record, detail, ct);
+    }
+
+    // 放回佇列稍後再試。
+    //
+    // 為什麼要延遲：服務剛掛掉時立刻重排只會馬上再失敗一次，
+    // 而且會讓工作者空轉。延遲後再入列給服務恢復的時間。
+    //
+    // ⚠️ 延遲用背景 Task 實作，不會阻塞工作者處理其他作業。
+    //    代價是應用重啟時這些等待中的重排會遺失 —— 與行程內佇列同樣的限制。
+    private async Task Requeue(
+        IDetectionRepository repository, DetectionRecord record, string reason)
+    {
+        if (!TryTransition(record, JobStatus.Pending)) return;
+
+        record.FailureReason = Truncate($"第 {record.AttemptCount} 次嘗試失敗，稍後重試：{reason}");
+        await repository.UpdateAsync(record, CancellationToken.None);
+
+        _logger.LogWarning(
+            "作業 {JobId} 第 {Attempt}/{Max} 次失敗，{Delay} 秒後重試：{Reason}",
+            record.Id, record.AttemptCount, _maxAttempts, _requeueDelaySeconds, reason);
+
+        var jobId = record.Id;
+        var delay = TimeSpan.FromSeconds(_requeueDelaySeconds);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay);
+                await _queue.EnqueueAsync(jobId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "作業 {JobId} 重新入列失敗", jobId);
+            }
+        });
     }
 
     // 推播給所有連線的客戶端。
@@ -195,7 +258,7 @@ public class InferenceWorker : BackgroundService
         return true;
     }
 
-    // 標記失敗。失敗原因會回傳給客戶端，儀表板呈現而非隱藏。
+    // 標記為終態失敗。失敗原因會回傳給客戶端，儀表板呈現而非隱藏。
     //
     // 注意這裡用 CancellationToken.None：即使原本的 token 已取消，
     // 也要把失敗狀態寫進資料庫，否則作業會卡在 Processing。
@@ -204,12 +267,16 @@ public class InferenceWorker : BackgroundService
     {
         if (!TryTransition(record, JobStatus.Failed)) return;
 
-        record.FailureReason = reason.Length > 500 ? reason[..500] : reason;
+        record.FailureReason = Truncate(reason);
         record.CompletedAt = DateTime.UtcNow;
         await repository.UpdateAsync(record, CancellationToken.None);
 
-        _logger.LogWarning("作業 {JobId} 失敗：{Reason}", record.Id, reason);
+        _logger.LogWarning("作業 {JobId} 最終失敗：{Reason}", record.Id, reason);
 
         await Push("DetectionFailed", record);
     }
+
+    // 資料庫欄位限制 500 字，例外訊息可能更長。
+    private static string Truncate(string text) =>
+        text.Length > 500 ? text[..500] : text;
 }

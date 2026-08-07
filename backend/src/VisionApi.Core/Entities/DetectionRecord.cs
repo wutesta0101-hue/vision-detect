@@ -42,6 +42,15 @@ public class DetectionRecord
     // 作業狀態。合法的轉移規則定義在 JobStateMachine。
     public JobStatus Status { get; set; } = JobStatus.Pending;
 
+    // 已嘗試處理的次數。
+    //
+    // 注意這是「作業層」的重試，與 Polly 的「HTTP 層」重試不同：
+    //   HTTP 層  —— 單次呼叫內的瞬間故障，秒級，使用者無感
+    //   作業層   —— 服務較長時間不可用，分鐘級，需要放回佇列稍後再試
+    //
+    // 達到上限後才真正標記為 Failed。
+    public int AttemptCount { get; set; }
+
     // 失敗時的原因，成功時為 null。
     // 儀表板要呈現失敗而非隱藏，所以這個欄位會回傳給客戶端。
     public string? FailureReason { get; set; }

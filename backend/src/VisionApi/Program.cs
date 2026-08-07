@@ -9,7 +9,7 @@ using VisionApi.Infrastructure.Storage;
 
 // 應用進入點。
 //
-// 第四刀新增：SignalR 即時推播、CORS（開發階段前端在不同 port）。
+// 第五刀新增：Polly 韌性策略（逾時、重試、斷路器）。
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,15 +38,22 @@ builder.Services.AddCors(options =>
         .AllowCredentials());
 });
 
-// 模型服務客戶端。
-// 用 AddHttpClient 而不是 new HttpClient()：前者會管理連線池，
-// 也是之後掛上 Polly 韌性策略的接點。
+// 韌性策略參數，可在 appsettings.json 調整而不需重新編譯
+var resilience = builder.Configuration.GetSection("Resilience").Get<ResilienceSettings>()
+                 ?? new ResilienceSettings();
+
+// 模型服務客戶端 + 韌性策略。
+//
+// HttpClient.Timeout 必須大於「Polly 全部嘗試加起來」的時間，
+// 否則重試還沒跑完就被外層逾時砍掉。
+// 這裡設得寬鬆，實際的時間控制交給 Polly 的逐次逾時。
 builder.Services.AddHttpClient<IModelServiceClient, ModelServiceClient>(client =>
 {
     var baseUrl = builder.Configuration["ModelService:BaseUrl"] ?? "http://localhost:8000";
     client.BaseAddress = new Uri(baseUrl);
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
+    client.Timeout = TimeSpan.FromMinutes(2);
+})
+.AddModelServiceResilience(resilience);
 
 // 資料庫。連線字串來自 appsettings 或環境變數 ConnectionStrings__Default。
 builder.Services.AddDbContext<VisionDbContext>(options =>
