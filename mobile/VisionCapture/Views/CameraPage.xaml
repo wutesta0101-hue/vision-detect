@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    拍攝主畫面。
+
+    版面由上而下：
+      1. 狀態列（連線狀態、待傳數量）
+      2. 取景區（即時相機預覽 + 圓形準心疊層）
+      3. 辨識結果卡片
+      4. 拍攝按鈕
+
+    配色沿用桌機端：淺灰背景 + 融入背景的陰影卡片。
+
+    ⚠️ 與前一版的差異：
+       原本用 Image 顯示「拍完的照片」，拍攝時會跳到系統相機 app。
+       現在改用 CommunityToolkit 的 CameraView，取景區是即時預覽，
+       準心真正發揮「對準再拍」的作用，也不會離開 app。
+-->
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
+             x:Class="VisionCapture.Views.CameraPage"
+             Title="vision-detect"
+             BackgroundColor="#F2F3F5">
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto" Padding="16" RowSpacing="12">
+
+        <!-- ① 狀態列 -->
+        <Border Grid.Row="0"
+                BackgroundColor="White"
+                StrokeThickness="0"
+                Padding="14,10">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="12" />
+            </Border.StrokeShape>
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Ellipse x:Name="ConnectionDot"
+                         Grid.Column="0"
+                         WidthRequest="8" HeightRequest="8"
+                         Fill="#FF3B30"
+                         VerticalOptions="Center" />
+                <Label x:Name="StatusLabel"
+                       Grid.Column="1"
+                       Text="連線中…"
+                       FontSize="13"
+                       TextColor="#6E6E73"
+                       Margin="8,0,0,0"
+                       VerticalOptions="Center" />
+                <Label x:Name="PendingLabel"
+                       Grid.Column="2"
+                       FontSize="12"
+                       TextColor="#FF9500"
+                       VerticalOptions="Center" />
+            </Grid>
+        </Border>
+
+        <!-- ② 取景區：即時預覽疊上準心 -->
+        <Grid Grid.Row="1">
+            <Border BackgroundColor="#1A2530"
+                    StrokeThickness="0">
+                <Border.StrokeShape>
+                    <RoundRectangle CornerRadius="12" />
+                </Border.StrokeShape>
+
+                <!-- 即時相機預覽。
+                     MediaCaptured 事件在拍照完成時觸發，帶回影像串流。 -->
+                <toolkit:CameraView x:Name="Camera"
+                                    MediaCaptured="OnMediaCaptured"
+                                    MediaCaptureFailed="OnMediaCaptureFailed" />
+            </Border>
+
+            <!-- 準心疊在最上層，InputTransparent 讓觸控穿透 -->
+            <GraphicsView x:Name="CrosshairView"
+                          InputTransparent="True" />
+
+            <Label x:Name="HintLabel"
+                   Text="將物件對準圓心後拍攝"
+                   FontSize="13"
+                   TextColor="White"
+                   Opacity="0.75"
+                   HorizontalOptions="Center"
+                   VerticalOptions="End"
+                   Margin="0,0,0,20" />
+        </Grid>
+
+        <!-- ③ 辨識結果 -->
+        <Border Grid.Row="2"
+                BackgroundColor="White"
+                StrokeThickness="0"
+                Padding="14"
+                IsVisible="False"
+                x:Name="ResultCard">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="12" />
+            </Border.StrokeShape>
+            <VerticalStackLayout Spacing="6">
+                <Label x:Name="ResultTitle"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       TextColor="#6E6E73" />
+                <Label x:Name="ResultBody"
+                       FontSize="15"
+                       TextColor="#1D1D1F" />
+                <Label x:Name="ResultMeta"
+                       FontSize="12"
+                       TextColor="#8E8E93" />
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- ④ 拍攝按鈕 -->
+        <Button Grid.Row="3"
+                x:Name="CaptureButton"
+                Text="拍攝辨識"
+                FontSize="16"
+                FontAttributes="Bold"
+                HeightRequest="52"
+                CornerRadius="12"
+                BackgroundColor="#0071E3"
+                TextColor="White"
+                Clicked="OnCaptureClicked" />
+    </Grid>
+</ContentPage>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    導覽結構：底部兩個分頁。
+
+    拍攝是主要功能放第一個；設定只在首次使用或換網路時才會用到。
+-->
+<Shell xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+       xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+       xmlns:views="clr-namespace:VisionCapture.Views"
+       x:Class="VisionCapture.AppShell"
+       FlyoutBehavior="Disabled">
+
+    <TabBar>
+        <ShellContent Title="拍攝"
+                      Route="camera"
+                      ContentTemplate="{DataTemplate views:CameraPage}" />
+        <ShellContent Title="設定"
+                      Route="settings"
+                      ContentTemplate="{DataTemplate views:SettingsPage}" />
+    </TabBar>
+</Shell>

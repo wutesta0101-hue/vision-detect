@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    設定畫面：填寫伺服器位址。
+
+    每個人的電腦區網 IP 不同，所以必須讓使用者自己填 —— 
+    寫死在程式碼裡的話，換一台電腦就要重新編譯 APK。
+-->
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="VisionCapture.Views.SettingsPage"
+             Title="設定"
+             BackgroundColor="#F2F3F5">
+
+    <VerticalStackLayout Padding="16" Spacing="12">
+
+        <Border BackgroundColor="White" StrokeThickness="0" Padding="16">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="12" />
+            </Border.StrokeShape>
+            <VerticalStackLayout Spacing="10">
+
+                <Label Text="伺服器位址"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       TextColor="#6E6E73" />
+
+                <Entry x:Name="UrlEntry"
+                       Placeholder="http://192.168.1.100"
+                       Keyboard="Url"
+                       FontSize="15" />
+
+                <Label FontSize="12" TextColor="#8E8E93"
+                       Text="填寫執行 Docker 的那台電腦的區網 IP。在該電腦執行 ipconfig 可查得。手機與電腦需連同一個 Wi-Fi。" />
+
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10" Margin="0,6,0,0">
+                    <Button Grid.Column="0"
+                            Text="測試連線"
+                            BackgroundColor="#E5E5E7"
+                            TextColor="#1D1D1F"
+                            CornerRadius="10"
+                            Clicked="OnTestClicked" />
+                    <Button Grid.Column="1"
+                            Text="儲存"
+                            BackgroundColor="#0071E3"
+                            TextColor="White"
+                            CornerRadius="10"
+                            Clicked="OnSaveClicked" />
+                </Grid>
+
+                <Label x:Name="TestResult"
+                       FontSize="13"
+                       IsVisible="False" />
+            </VerticalStackLayout>
+        </Border>
+
+        <Border BackgroundColor="White" StrokeThickness="0" Padding="16">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="12" />
+            </Border.StrokeShape>
+            <VerticalStackLayout Spacing="4">
+                <Label Text="裝置識別碼"
+                       FontSize="13"
+                       FontAttributes="Bold"
+                       TextColor="#6E6E73" />
+                <Label x:Name="DeviceIdLabel"
+                       FontSize="14"
+                       TextColor="#1D1D1F" />
+                <Label Text="桌機儀表板會用它區分來源裝置。"
+                       FontSize="12"
+                       TextColor="#8E8E93" />
+            </VerticalStackLayout>
+        </Border>
+
+    </VerticalStackLayout>
+</ContentPage>

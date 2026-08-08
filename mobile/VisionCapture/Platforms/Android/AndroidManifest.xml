@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Android 權限與網路設定。
+
+    三個關鍵：
+      1. CAMERA 權限 —— 但只宣告不夠，Android 6 以上還要在執行期請求
+         （見 CameraPage.OnCaptureClicked 的 Permissions.RequestAsync）
+
+      2. WRITE / READ_EXTERNAL_STORAGE —— MediaPicker 在 Android 12（API 32）
+         以下需要這兩個權限，才能把系統相機拍好的照片交給 app。
+         少了它們，按下拍攝會直接拋 PermissionException 並閃退。
+         maxSdkVersion 讓它們只套用於舊版；Android 13 以上改用範圍儲存，
+         不需要也不該宣告。
+
+      3. usesCleartextTraffic —— Android 9 以上預設禁止明文 HTTP，
+         而區網的伺服器沒有 HTTPS 憑證。少了這個設定，
+         所有請求都會被系統擋掉，而且錯誤訊息不明顯。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+	<application android:allowBackup="true"
+	             android:icon="@mipmap/appicon"
+	             android:roundIcon="@mipmap/appicon_round"
+	             android:supportsRtl="true"
+	             android:usesCleartextTraffic="true" />
+
+	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+	<uses-permission android:name="android.permission.INTERNET" />
+	<uses-permission android:name="android.permission.CAMERA" />
+
+	<!-- MediaPicker 在 Android 12 以下需要，13 以上由範圍儲存取代 -->
+	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+	                 android:maxSdkVersion="32" />
+	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+	                 android:maxSdkVersion="32" />
+
+	<queries>
+		<intent>
+			<action android:name="android.media.action.IMAGE_CAPTURE" />
+		</intent>
+	</queries>
+
+</manifest>

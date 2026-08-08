@@ -88,3 +88,7 @@ dist-ssr/
 
 # ====== 前端本機設定（每個人的 port 不同）======
 .env.development
+
+# 除錯用的日誌輸出
+crash*.txt
+*.log
