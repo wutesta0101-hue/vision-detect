@@ -152,8 +152,6 @@ cp .env.docker.example .env    # edit the password
 docker compose up -d
 ```
 
-![Four containers starting up](docs/demo-startup.gif)
-
 **Only one port is published externally.**
 Nginx serves the static assets, proxies `/api/*`, and upgrades `/hub/*` to WebSocket. The browser and the phone see a single origin, so no CORS configuration is needed.
 

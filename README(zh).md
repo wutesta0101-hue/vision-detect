@@ -150,8 +150,6 @@ cp .env.docker.example .env    # 修改密碼
 docker compose up -d
 ```
 
-![四容器啟動](docs/demo-startup.gif)
-
 **對外只發布一個連接埠。**
 Nginx 提供靜態檔、代理 `/api/*`，並把 `/hub/*` 升級為 WebSocket。瀏覽器與手機看到同一個來源，不需要 CORS 設定。
 
