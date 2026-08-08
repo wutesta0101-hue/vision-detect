@@ -14,7 +14,7 @@
 | .NET SDK | 8.0+ | C# 業務層 |
 | Node.js | 20+ | Vue 儀表板 |
 | Python | 3.12 | 模型推論服務 |
-| Visual Studio 2026 | 含 .NET MAUI 工作負載 | 行動端（選配） |
+| Visual Studio 2026 | 含 .NET MAUI 工作負載 | 行動端 |
 
 > 行動端非必要 —— 前四項就能完成主要功能的驗證。
 > 桌機儀表板有上傳面板，不需要手機也能測試完整流程。
@@ -71,7 +71,7 @@ npm run dev
 
 打開 <http://localhost:5173>
 
-### 5. 行動端（選配）
+### 5. 行動端
 
 需要一台 Android 裝置或模擬器。
 
@@ -224,7 +224,7 @@ curl.exe -i -X POST http://localhost:5273/api/v1/detections `
 
 **預期**：狀態碼不同（`202` vs `200`），且列表中只有一筆紀錄。
 
-### 7. 行動端完整流程（選配）
+### 7. 行動端完整流程
 
 ![手機拍照，桌機同步](demo-mobile.gif)
 
@@ -235,7 +235,7 @@ curl.exe -i -X POST http://localhost:5273/api/v1/detections `
 3. 手機顯示辨識結果
 4. **桌機表格同步多一列**，裝置欄顯示手機識別碼（例如 `V2027-cf73`）
 
-### 8. 離線佇列（選配）
+### 8. 離線佇列
 
 驗證離線容錯與冪等性的配合。
 
