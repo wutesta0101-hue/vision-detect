@@ -4,9 +4,9 @@
 
 > 分散式物件辨識系統 —— 手機拍攝、Python 推論、C# 編排、桌機即時檢視。
 
-![即時推播](docs/demo-realtime.gif)
+![手機拍照，桌機同步顯示](docs/demo-mobile.gif)
 
-上傳影像後，桌機儀表板即時新增一列 —— 不輪詢、不重新整理。
+手機拍下照片，桌機儀表板即時新增一列 —— 不輪詢、不重新整理。
 
 **狀態：第一階段開發中。**
 
@@ -24,6 +24,7 @@
 - [測試策略](#測試策略)
 - [專案結構](#專案結構)
 - [已知限制](#已知限制)
+- [文件導覽](#文件導覽)
 - [授權](#授權)
 
 ---
@@ -90,6 +91,16 @@ C# 負責作業生命週期、持久化、裝置身分、去重，以及客戶�
 | .NET MAUI Android 端 | 相機權限、拍攝、離線佇列與補傳 |
 | Docker Compose 部署 | 四服務拓樸、含 WebSocket 升級的反向代理 |
 
+**進度**
+
+- [x] Python FastAPI 推論服務
+- [x] ASP.NET Core API + EF Core + PostgreSQL
+- [x] 非同步佇列與狀態機
+- [x] 冪等性（requestId 去重）
+- [x] SignalR 即時推播 + Vue 儀表板
+- [x] Polly 韌性策略
+- [x] .NET MAUI Android 端
+- [x] Docker Compose 四容器部署
 
 ### 第二階段 — PyTorch 基礎
 
@@ -118,17 +129,28 @@ C# 負責作業生命週期、持久化、裝置身分、去重，以及客戶�
 
 ![系統架構圖](docs/architecture\(zh\).png)
 
-1.`IdempotencyFilter`、`InferenceWorker`、`ModelServiceClient`、`DetectionHub` 才是讓這套系統從「請求回應包裝」變成「失敗時行為明確的系統」的元件。
+1. `InferenceWorker`、`ModelServiceClient`、`DetectionHub` 才是讓這套系統從「請求回應包裝」變成「失敗時行為明確的系統」的元件。冪等檢查寫在 `DetectionsController` 內，未獨立成 filter。
 
-2.上傳路徑與結果路徑刻意分離。`POST` 在作業持久化後立刻返回，結果稍後經 hub 送達。儀表板與行動端都訂閱同一個 hub，這就是為什麼手機拍的照片會出現在桌機而不需重新整理。
+2. 上傳路徑與結果路徑刻意分離。`POST` 在作業持久化後立刻返回，結果稍後經 hub 送達。儀表板與行動端都訂閱同一個 hub，這就是為什麼手機拍的照片會出現在桌機而不需重新整理。
 
-3.`Channel<DetectionJob>` 是行程內佇列。單一 API 實例夠用，也讓部署維持在四個容器 —— 但它不能在重啟後存活，也無法跨副本分派。這個取捨列在[已知限制](#已知限制)。
+![curl 上傳，桌機即時更新](docs/demo-realtime.gif)
+
+3. `Channel<Guid>` 是行程內佇列。單一 API 實例夠用，也讓部署維持在四個容器 —— 但它不能在重啟後存活，也無法跨副本分派。這個取捨列在[已知限制](#已知限制)。
 
 ---
 
 ## 部署拓樸
 
 ![部署拓樸圖](docs/deployment\(zh\).png)
+
+一行指令啟動整套系統：
+
+```bash
+cp .env.docker.example .env    # 修改密碼
+docker compose up -d
+```
+
+![四容器啟動](docs/demo-startup.gif)
 
 **對外只發布一個連接埠。**
 Nginx 提供靜態檔、代理 `/api/*`，並把 `/hub/*` 升級為 WebSocket。瀏覽器與手機看到同一個來源，不需要 CORS 設定。
@@ -139,8 +161,8 @@ Nginx 提供靜態檔、代理 `/api/*`，並把 `/hub/*` 升級為 WebSocket。
 **WebSocket 需要明確的代理設定。**
 `proxy_http_version 1.1` 加上 `Upgrade` 與 `Connection` 標頭。少了它們，SignalR 會靜靜退回長輪詢，或直接連不上。
 
-**權重以 volume 掛載而非包進 image。**
-換模型只是替換檔案並重啟一個容器。
+**模型權重在建置階段內建於映像。**
+換模型時可用 volume 掛載覆寫，並修改 `MODEL_WEIGHTS` 環境變數 —— 不需重新建置映像。
 
 ---
 
@@ -210,6 +232,26 @@ Pending ──→ Processing ──→ Done
 
 `model_version` 隨每筆紀錄寫入資料庫 —— 沒有它，第三階段換模型後分不清準確度變化的來源。
 
+**錯誤分類決定重試策略**
+
+| 狀態碼 | `error` | 情境 | C# 的處理 |
+|---|---|---|---|
+| `400` | `invalid_image` | 檔案損毀、格式不支援 | 不重試，直接 `Failed` |
+| `413` | `image_too_large` | 超過大小上限 | 不重試 |
+| `503` | `model_not_ready` | 模型還在載入 | 重試，退避等待 |
+| `500` | `inference_error` | 推論過程未預期錯誤 | 重試，有限次數 |
+
+全部回 `500` 的話，系統會對著一張損毀的影像重試三次才放棄 —— 
+浪費時間，而且日誌看起來像服務不穩定，實際上是輸入有問題。
+
+**命名慣例各自保持**
+
+Python 用 `snake_case`、C# 用 `PascalCase`、對外 API 輸出 `camelCase`。
+兩次轉換分別由 `ModelServiceClient` 的 `JsonSerializerOptions` 與
+ASP.NET 的預設序列化處理，各層不需要遷就彼此。
+
+完整規格見 [CONTRACT.md](model-service/CONTRACT.md)。
+
 ---
 
 ## 技術組成
@@ -268,23 +310,6 @@ vision-detect/
 ├── docs/               架構圖與截圖
 └── docker-compose.yml
 ```
----
-
-## 開發
-
-本機啟動與驗證流程見 [DEVELOPMENT.md](docs/DEVELOPMENT.md)。
-
----
-### 第一階段進度
-
-- [x] Python FastAPI 推論服務
-- [x] ASP.NET Core API + EF Core + PostgreSQL
-- [x] 非同步佇列與狀態機
-- [x] 冪等性（requestId 去重）
-- [x] SignalR 即時推播 + Vue 儀表板
-- [x] Polly 韌性策略
-- [ ] .NET MAUI Android 端
-- [x] Docker Compose 四容器部署
 
 ---
 
@@ -299,6 +324,19 @@ vision-detect/
 | 無使用者帳號 | 以 `deviceId` 識別裝置，未建模認證授權 |
 | 影像存於本機 volume | 非物件儲存；單機部署足夠 |
 | 未使用 GPU | CPU 推論；對「拍攝後檢視」的工作流程延遲可接受 |
+| 只支援 Android | iOS 需要 Mac 才能建置；`TargetFrameworks` 加回即可，程式碼不用改 |
+
+未修正的缺陷與完整的取捨說明見 [ENGINEERING.md](docs/ENGINEERING.md)。
+
+---
+
+## 文件導覽
+
+| 文件 | 內容 |
+|---|---|
+| [ENGINEERING.md](docs/ENGINEERING.md) | 設計決策、實作過程中的關鍵問題、已知限制 |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | 本機啟動與驗證流程 |
+| [CONTRACT.md](model-service/CONTRACT.md) | C# 與模型服務之間的 API 契約 |
 
 ---
 
@@ -308,10 +346,6 @@ vision-detect/
 
 本專案以 **GNU Affero General Public License v3.0（AGPL-3.0）** 釋出，完整條款見 [`LICENSE`](LICENSE)。
 
-
 ### 若要作為商業用途
 
 需向 Ultralytics 取得 Enterprise License，或改用授權較寬鬆的偵測模型（例如 Apache-2.0 授權者）。後者在本架構下的改動成本很低 —— 推論服務是獨立容器，替換模型不影響業務層與客戶端。
-
-
-

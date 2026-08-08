@@ -4,9 +4,9 @@
 
 > A distributed object detection system — capture on mobile, infer in Python, orchestrate in C#, review live on desktop.
 
-![Real-time push](docs/demo-realtime.gif)
+![Photo taken on a phone appears on the desktop instantly](docs/demo-mobile.gif)
 
-Once an image is uploaded, the desktop dashboard gains a row in real time — no polling, no refresh.
+A photo taken on a phone gains a row on the desktop dashboard in real time — no polling, no refresh.
 
 **Status: Phase 1 in development.**
 
@@ -24,6 +24,7 @@ Once an image is uploaded, the desktop dashboard gains a row in real time — no
 - [Testing Approach](#testing-approach)
 - [Repository Layout](#repository-layout)
 - [Known Limitations](#known-limitations)
+- [Documentation](#documentation)
 - [Licence](#licence)
 
 ---
@@ -90,6 +91,16 @@ Complete the whole system with a COCO-pretrained model. No training.
 | .NET MAUI Android client | Camera permissions, capture, offline queue and resend |
 | Docker Compose deployment | Four-service topology, reverse proxy including WebSocket upgrade |
 
+**Progress**
+
+- [x] Python FastAPI inference service
+- [x] ASP.NET Core API + EF Core + PostgreSQL
+- [x] Asynchronous queue and state machine
+- [x] Idempotency (requestId deduplication)
+- [x] SignalR real-time push + Vue dashboard
+- [x] Polly resilience policies
+- [x] .NET MAUI Android client
+- [x] Docker Compose four-container deployment
 
 ### Phase 2 — PyTorch Fundamentals
 
@@ -118,17 +129,30 @@ Build a domain dataset, fine-tune, and evaluate.
 
 ![System architecture](docs/architecture\(zh\).png)
 
-1. `IdempotencyFilter`, `InferenceWorker`, `ModelServiceClient`, and `DetectionHub` are the components that turn this system from a request-response wrapper into one whose behaviour under failure is well defined.
+1. `InferenceWorker`, `ModelServiceClient`, and `DetectionHub` are the components that turn this system from a request-response wrapper into one whose behaviour under failure is well defined. The idempotency check lives inside `DetectionsController` rather than in a separate filter.
 
 2. The upload path and the result path are deliberately separate. `POST` returns as soon as the job is persisted; the result arrives later over the hub. Both the dashboard and the mobile client subscribe to the same hub, which is why a photo taken on a phone appears on the desktop without anyone refreshing.
 
-3. `Channel<DetectionJob>` is an in-process queue. It is sufficient for a single API instance and keeps the deployment at four containers — but it does not survive a restart, and it cannot distribute across replicas. This trade-off is listed under [Known Limitations](#known-limitations).
+![Uploading via curl updates the dashboard instantly](docs/demo-realtime.gif)
+
+3. `Channel<Guid>` is an in-process queue. It is sufficient for a single API instance and keeps the deployment at four containers — but it does not survive a restart, and it cannot distribute across replicas. This trade-off is listed under [Known Limitations](#known-limitations).
+
+> Diagram labels are in Traditional Chinese.
 
 ---
 
 ## Deployment Topology
 
 ![Deployment topology](docs/deployment\(zh\).png)
+
+The whole system starts with a single command:
+
+```bash
+cp .env.docker.example .env    # edit the password
+docker compose up -d
+```
+
+![Four containers starting up](docs/demo-startup.gif)
 
 **Only one port is published externally.**
 Nginx serves the static assets, proxies `/api/*`, and upgrades `/hub/*` to WebSocket. The browser and the phone see a single origin, so no CORS configuration is needed.
@@ -139,8 +163,8 @@ It is addressable only on the internal Docker network, and the business layer is
 **WebSocket requires explicit proxy configuration.**
 `proxy_http_version 1.1` together with the `Upgrade` and `Connection` headers. Without them, SignalR silently falls back to long polling, or fails to connect at all.
 
-**Weights are volume-mounted rather than baked into the image.**
-Changing a model means replacing a file and restarting one container.
+**Model weights are baked into the image at build time.**
+To swap models, mount a volume over the weights directory and change the `MODEL_WEIGHTS` environment variable — no image rebuild required.
 
 ---
 
@@ -210,6 +234,23 @@ Coordinates are **top-left corner plus width and height, in source-image pixels*
 
 `model_version` is written to the database with every record — without it, there is no way to tell where an accuracy change came from after swapping models in Phase 3.
 
+**Error classification drives the retry policy**
+
+| Status | `error` | Situation | C# behaviour |
+|---|---|---|---|
+| `400` | `invalid_image` | Corrupt file, unsupported format | No retry; mark `Failed` immediately |
+| `413` | `image_too_large` | Exceeds the size limit | No retry |
+| `503` | `model_not_ready` | Model still loading | Retry with backoff |
+| `500` | `inference_error` | Unexpected error during inference | Retry, bounded attempts |
+
+Returning `500` for everything would make the system retry a corrupt image three times before giving up — wasted time, and logs that look like an unstable service when the real problem is the input.
+
+**Each layer keeps its own naming convention**
+
+Python uses `snake_case`, C# uses `PascalCase`, and the public API emits `camelCase`. The two conversions are handled by `ModelServiceClient`'s `JsonSerializerOptions` and by ASP.NET's default serialisation respectively, so no layer has to accommodate another.
+
+Full specification: [CONTRACT.md](model-service/CONTRACT.md).
+
 ---
 
 ## Tech Stack
@@ -268,23 +309,6 @@ vision-detect/
 ├── docs/               diagrams and screenshots
 └── docker-compose.yml
 ```
----
-
-## Development
-
-For local setup and verification steps, see [DEVELOPMENT.md](docs/DEVELOPMENT.md).
-
----
-### Phase 1 Progress
-
-- [x] Python FastAPI inference service
-- [x] ASP.NET Core API + EF Core + PostgreSQL
-- [x] Asynchronous queue and state machine
-- [x] Idempotency (requestId deduplication)
-- [x] SignalR real-time push + Vue dashboard
-- [x] Polly resilience policies
-- [ ] .NET MAUI Android client
-- [x] Docker Compose four-container deployment
 
 ---
 
@@ -299,6 +323,19 @@ Stated plainly — these are decisions, not oversights:
 | No user accounts | Devices are identified by `deviceId`; authentication and authorisation are not modelled |
 | Images stored on a local volume | Not object storage; adequate for a single-host deployment |
 | No GPU | CPU inference; the latency is acceptable for a capture-then-review workflow |
+| Android only | iOS requires a Mac to build; adding it back to `TargetFrameworks` needs no code changes |
+
+Unresolved defects and the full set of trade-offs are documented in [ENGINEERING.md](docs/ENGINEERING.md).
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [ENGINEERING.md](docs/ENGINEERING.md) | Design decisions, notable problems encountered, known limitations *(Traditional Chinese)* |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | Local setup and verification steps *(Traditional Chinese)* |
+| [CONTRACT.md](model-service/CONTRACT.md) | API contract between C# and the model service *(Traditional Chinese)* |
 
 ---
 
@@ -307,7 +344,6 @@ Stated plainly — these are decisions, not oversights:
 ### This project
 
 This project is released under the **GNU Affero General Public License v3.0 (AGPL-3.0)**; see [`LICENSE`](LICENSE) for the full terms.
-
 
 ### For commercial use
 
